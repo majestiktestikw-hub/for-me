@@ -45,8 +45,8 @@ def fetch_follower_count(username):
             headers={"x-api-key": API_KEY},
             timeout=25
         )
+        print("STATUS " + str(r.status_code))
         if r.status_code != 200:
-            print("HTTP_" + str(r.status_code))
             return None
 
         data = r.json()
@@ -56,8 +56,9 @@ def fetch_follower_count(username):
 
         followers = data.get("data", {}).get("author", {}).get("followers")
         return followers
-    except Exception:
-        print("EXCEPTION")
+    except Exception as e:
+        # Печатаем только безопасную информацию
+        print("EXCEPTION_TYPE " + type(e).__name__)
         return None
 
 
@@ -67,6 +68,7 @@ def main():
     timestamp = datetime.now(timezone.utc).isoformat()
 
     print("START " + timestamp)
+    print("KEY_LEN " + str(len(API_KEY)))
 
     snapshot = {"timestamp": timestamp, "accounts": {}}
 
