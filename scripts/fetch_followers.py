@@ -1,38 +1,23 @@
 #!/usr/bin/env python3
 """
-X (Twitter) Follower Tracker
-Fetches public follower counts for a list of accounts and appends to history.
-Designed to run in GitHub Actions every 12 hours.
+X Follower Tracker using SocialCrawl API
 """
 
 import json
 import os
-import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
-# Paths
 ROOT = Path(__file__).resolve().parent.parent
 ACCOUNTS_FILE = ROOT / "accounts.json"
 HISTORY_FILE = ROOT / "data" / "history.json"
 LATEST_FILE = ROOT / "data" / "latest.json"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Cache-Control": "max-age=0",
-}
+API_KEY = os.environ.get("SOCIALCRAWL_API_KEY")
+API_URL = "https://www.socialcrawl.dev/v1/twitter/profile"
 
 
 def load_accounts():
@@ -53,79 +38,33 @@ def save_json(path: Path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def parse_count(text: str) -> int | None:
-    """Convert '5.3K', '12.4M', '1,234' etc. to int."""
-    if not text:
-        return None
-    text = text.strip().replace(",", "").replace(" ", "").upper()
-    multipliers = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}
-    for suffix, mult in multipliers.items():
-        if text.endswith(suffix):
-            try:
-                return int(float(text[:-1]) * mult)
-            except ValueError:
-                return None
-    try:
-        return int(float(text))
-    except ValueError:
+def fetch_follower_count(username: str) -> int | None:
+    if not API_KEY:
+        print("  [ERROR] SOCIALCRAWL_API_KEY not set")
         return None
 
-
-def fetch_via_page(username: str) -> int | None:
-    """
-    Try to extract follower count from the public profile page.
-    X embeds data in meta tags and JSON. Success rate varies.
-    """
-    url = f"https://x.com/{username}"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = requests.get(
+            API_URL,
+            params={"handle": username},
+            headers={"x-api-key": API_KEY},
+            timeout=20,
+        )
         if resp.status_code != 200:
-            print(f"  [{username}] HTTP {resp.status_code}")
+            print(f"  [{username}] HTTP {resp.status_code}: {resp.text[:200]}")
             return None
 
-        html = resp.text
+        data = resp.json()
+        if not data.get("success"):
+            print(f"  [{username}] API error: {data}")
+            return None
 
-        # Method 1: og:description often contains "12345 followers · ..."
-        m = re.search(r'og:description" content="([^"]+)"', html)
-        if m:
-            desc = m.group(1)
-            m2 = re.search(r"([\d,]+)\s*followers", desc, re.I)
-            if m2:
-                return int(m2.group(1).replace(",", ""))
-
-        # Method 2: "followers_count":12345 in embedded JSON
-        match = re.search(r'"followers_count"\s*:\s*(\d+)', html)
-        if match:
-            return int(match.group(1))
-
-        # Method 3: alternative field
-        match = re.search(r'"followersCount"\s*:\s*(\d+)', html)
-        if match:
-            return int(match.group(1))
-
-        # Method 4: visible text patterns
-        match = re.search(
-            r'([\d,\.]+[KkMmBb]?)\s*(?:Followers|followers)',
-            html,
-            re.IGNORECASE,
-        )
-        if match:
-            return parse_count(match.group(1))
-
-        print(f"  [{username}] Could not find followers_count in page")
-        return None
+        followers = data.get("data", {}).get("author", {}).get("followers")
+        return followers
 
     except Exception as e:
         print(f"  [{username}] Error: {e}")
         return None
-
-
-def fetch_follower_count(username: str) -> int | None:
-    """Main fetch function. Can be extended with more providers later."""
-    count = fetch_via_page(username)
-    if count is not None:
-        return count
-    return None
 
 
 def main():
@@ -149,19 +88,16 @@ def main():
             print(f"  ✓ {count:,} followers")
         else:
             print(f"  ✗ failed")
-        time.sleep(1.5)
+        time.sleep(0.8)
 
-    # Append to history
     history.append(snapshot)
-
-    # Keep last ~90 days of data
     if len(history) > 200:
         history = history[-200:]
 
     save_json(HISTORY_FILE, history)
     save_json(LATEST_FILE, snapshot)
 
-    print("\nDone. Latest snapshot saved.")
+    print("\nDone.")
     print(json.dumps(snapshot, indent=2))
 
 
