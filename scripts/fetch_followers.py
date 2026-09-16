@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 X Follower Tracker using SocialCrawl API
 """
 
 import json
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+
+# Force UTF-8
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 
 ROOT = Path(__file__).resolve().parent.parent
 ACCOUNTS_FILE = ROOT / "accounts.json"
@@ -38,9 +44,9 @@ def save_json(path: Path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def fetch_follower_count(username: str) -> int | None:
+def fetch_follower_count(username: str):
     if not API_KEY:
-        print("  [ERROR] SOCIALCRAWL_API_KEY not set")
+        print(f"  [{username}] ERROR: SOCIALCRAWL_API_KEY not set")
         return None
 
     try:
@@ -50,20 +56,24 @@ def fetch_follower_count(username: str) -> int | None:
             headers={"x-api-key": API_KEY},
             timeout=20,
         )
+
         if resp.status_code != 200:
-            print(f"  [{username}] HTTP {resp.status_code}: {resp.text[:200]}")
+            print(f"  [{username}] HTTP {resp.status_code}")
             return None
 
         data = resp.json()
+
         if not data.get("success"):
-            print(f"  [{username}] API error: {data}")
+            print(f"  [{username}] API returned success=false")
             return None
 
-        followers = data.get("data", {}).get("author", {}).get("followers")
+        author = data.get("data", {}).get("author", {})
+        followers = author.get("followers")
         return followers
 
     except Exception as e:
-        print(f"  [{username}] Error: {e}")
+        # Safe print without unicode issues
+        print(f"  [{username}] Error: {type(e).__name__}")
         return None
 
 
@@ -81,14 +91,14 @@ def main():
     }
 
     for username in accounts:
-        print(f"→ @{username}")
+        print(f"-> @{username}")
         count = fetch_follower_count(username)
         snapshot["accounts"][username] = count
         if count is not None:
-            print(f"  ✓ {count:,} followers")
+            print(f"  OK {count} followers")
         else:
-            print(f"  ✗ failed")
-        time.sleep(0.8)
+            print(f"  FAILED")
+        time.sleep(0.7)
 
     history.append(snapshot)
     if len(history) > 200:
@@ -98,7 +108,7 @@ def main():
     save_json(LATEST_FILE, snapshot)
 
     print("\nDone.")
-    print(json.dumps(snapshot, indent=2))
+    print(json.dumps(snapshot, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
