@@ -2,9 +2,8 @@ name: Track X Followers
 
 on:
   schedule:
-    # Every 12 hours (00:00 and 12:00 UTC)
     - cron: "0 */12 * * *"
-  workflow_dispatch:  # allow manual run
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,7 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-           - name: Fetch follower counts
+      - name: Fetch follower counts
         run: python scripts/fetch_followers.py
         env:
           SOCIALCRAWL_API_KEY: ${{ secrets.SOCIALCRAWL_API_KEY }}
